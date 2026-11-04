@@ -1,0 +1,76 @@
+# ============================================================
+# 题目抽卡项目（Quiz Card）
+# 仓库结构：backend/（Spring Boot 3 + Maven）/ frontend/（Vue3 + Vite + TS）
+# ============================================================
+
+# ---------- 通用 / 系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+logs/
+*.tmp
+*.swp
+*.swo
+
+# ---------- IDE / 编辑器 ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.trae/
+
+# ---------- 环境变量与密钥（禁止入库）----------
+.env
+.env.*
+!.env.example
+*.pem
+
+# ============================================================
+# backend/ — Spring Boot + MyBatis-Plus + Maven
+# ============================================================
+
+# Maven 构建输出
+backend/target/
+*.class
+*.jar
+*.war
+*.ear
+
+# 后端运行日志
+backend/logs/
+
+# ============================================================
+# frontend/ — Vue3 + Vite + TypeScript
+# ============================================================
+
+# 依赖
+frontend/node_modules/
+frontend/.vite/
+frontend/pnpm-store/
+
+frontend/.eslintcache
+
+# 构建输出
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+
+# TypeScript 增量编译产物（vue-tsc -b 生成）
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
+# vue-tsc 误生成的编译产物（源码为 .ts / .vue，.js 均为产物）
+frontend/src/**/*.js
+frontend/src/**/*.js.map
+
+# vue-tsc 误生成的 vite 配置编译产物（会覆盖 vite.config.ts，禁止入库）
+frontend/vite.config.js
+frontend/vite.config.js.map
+frontend/vite.config.d.ts
+frontend/vite.config.d.ts.map
+
+# 本地备份 / 临时导出
+*.bak
+*.orig
