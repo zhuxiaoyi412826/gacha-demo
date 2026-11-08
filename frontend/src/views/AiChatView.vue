@@ -31,12 +31,16 @@
 
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
-import { streamChat } from '@/api/chat'
+import { ElMessage } from 'element-plus'
+import { chatOnce, streamChat } from '@/api/chat'
+import { useSettings } from '@/composables/useSettings'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
 }
+
+const { settings } = useSettings()
 
 const messages = ref<Message[]>([])
 const input = ref('')
@@ -54,32 +58,42 @@ const scrollToBottom = async () => {
 const send = async () => {
   const text = input.value.trim()
   if (!text || loading.value) return
+
+  // 上下文轮数：每轮 = 一问一答，0 表示不携带历史
+  const rounds = Math.max(0, settings.aiContextRounds)
+  const history =
+    rounds > 0
+      ? messages.value.slice(-rounds * 2).map((m) => ({ role: m.role, content: m.content }))
+      : []
+
   messages.value.push({ role: 'user', content: text })
   input.value = ''
   loading.value = true
   replyBuffer.value = ''
   await scrollToBottom()
 
-  streamChat(text, {
-    onMessage: (delta) => {
-      replyBuffer.value += delta
-      scrollToBottom()
-    },
-    onError: () => {
-      if (replyBuffer.value) {
-        messages.value.push({ role: 'assistant', content: replyBuffer.value })
-      }
-      replyBuffer.value = ''
-      loading.value = false
-    },
-    onClose: () => {
-      if (replyBuffer.value) {
-        messages.value.push({ role: 'assistant', content: replyBuffer.value })
-      }
-      replyBuffer.value = ''
-      loading.value = false
+  const payload = { message: text, history }
+  try {
+    if (settings.streamingEnabled) {
+      await streamChat(payload, {
+        onMessage: (delta) => {
+          replyBuffer.value += delta
+          void scrollToBottom()
+        }
+      })
+    } else {
+      replyBuffer.value = await chatOnce(payload)
     }
-  })
+  } catch (err) {
+    ElMessage.error((err as Error).message || 'AI 请求失败')
+  } finally {
+    if (replyBuffer.value) {
+      messages.value.push({ role: 'assistant', content: replyBuffer.value })
+    }
+    replyBuffer.value = ''
+    loading.value = false
+    await scrollToBottom()
+  }
 }
 </script>
 
@@ -87,13 +101,13 @@ const send = async () => {
 .chat-page {
   height: calc(100vh - 60px);
   padding: 16px;
-  background: #f5f7fa;
+  background: var(--el-bg-color-page);
 }
 .chat-window {
   max-width: 900px;
   margin: 0 auto;
   height: 100%;
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   display: flex;
@@ -123,12 +137,12 @@ const send = async () => {
   word-break: break-word;
 }
 .msg.user .bubble {
-  background: #409eff;
+  background: var(--el-color-primary);
   color: #fff;
 }
 .msg.assistant .bubble {
-  background: #f5f7fa;
-  color: #303133;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
 }
 .role {
   font-size: 12px;
@@ -140,10 +154,12 @@ const send = async () => {
   animation: blink 1s infinite;
 }
 @keyframes blink {
-  50% { opacity: 0; }
+  50% {
+    opacity: 0;
+  }
 }
 .input-area {
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-light);
   padding: 12px;
   display: flex;
   gap: 12px;

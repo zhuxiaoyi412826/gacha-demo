@@ -6,7 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.quizcard.common.BizException;
 import com.example.quizcard.dto.QuestionDTO;
 import com.example.quizcard.dto.QuestionQueryDTO;
+import com.example.quizcard.dto.RandomQuestionDTO;
 import com.example.quizcard.entity.Question;
+import com.example.quizcard.entity.QuestionCategory;
+import com.example.quizcard.mapper.CategoryMapper;
 import com.example.quizcard.mapper.QuestionMapper;
 import com.example.quizcard.service.QuestionService;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ public class QuestionServiceImpl implements QuestionService {
     private static final Long DEFAULT_CATEGORY_ID = 1L;
 
     private final QuestionMapper questionMapper;
+    private final CategoryMapper categoryMapper;
 
     @Override
     public IPage<Question> page(QuestionQueryDTO query) {
@@ -64,11 +68,9 @@ public class QuestionServiceImpl implements QuestionService {
         }
         List<Question> result = new ArrayList<>(dtos.size());
         LocalDateTime now = LocalDateTime.now();
+        // 同名分类只解析/创建一次，避免导入时重复查询和重复建分类
+        Map<String, Long> resolvedCategories = new HashMap<>();
         for (QuestionDTO dto : dtos) {
-            // categoryId 为空时自动归到默认分类(id=1)
-            if (dto.getCategoryId() == null) {
-                dto.setCategoryId(DEFAULT_CATEGORY_ID);
-            }
             if (!StringUtils.hasText(dto.getTitle())) {
                 throw new BizException("存在题目的题干为空");
             }
@@ -78,6 +80,8 @@ public class QuestionServiceImpl implements QuestionService {
             if (!StringUtils.hasText(dto.getAnswer())) {
                 throw new BizException("存在题目的参考答案为空");
             }
+            // 分类解析：categoryId 优先（必须存在），其次 categoryName，最后默认分类
+            dto.setCategoryId(resolveCategoryId(dto, resolvedCategories));
             // options 直接按字符串存储；前端模板示例即为 JSON 字符串
             Question question = new Question();
             applyDto(question, dto);
@@ -86,6 +90,45 @@ public class QuestionServiceImpl implements QuestionService {
             result.add(question);
         }
         return result;
+    }
+
+    /**
+     * 解析导入题目所属分类：
+     * 1. 传了 categoryId：必须存在于 question_category，否则报错（避免产生孤儿题目）
+     * 2. 没传 categoryId 但传了 categoryName：按名称匹配，不存在则自动创建
+     * 3. 都没传：归到默认分类(id=1)
+     */
+    private Long resolveCategoryId(QuestionDTO dto, Map<String, Long> resolvedCategories) {
+        if (dto.getCategoryId() != null) {
+            if (categoryMapper.selectById(dto.getCategoryId()) == null) {
+                throw new BizException("分类 ID " + dto.getCategoryId()
+                        + " 不存在（题目：" + dto.getTitle() + "），请检查导入文件的 categoryId，或改用 categoryName");
+            }
+            return dto.getCategoryId();
+        }
+        if (!StringUtils.hasText(dto.getCategoryName())) {
+            return DEFAULT_CATEGORY_ID;
+        }
+        String name = dto.getCategoryName().trim();
+        if (resolvedCategories.containsKey(name)) {
+            return resolvedCategories.get(name);
+        }
+        QuestionCategory existing = categoryMapper.selectOne(
+                new LambdaQueryWrapper<QuestionCategory>()
+                        .eq(QuestionCategory::getCategoryName, name)
+                        .last("LIMIT 1"));
+        Long categoryId;
+        if (existing != null) {
+            categoryId = existing.getId();
+        } else {
+            QuestionCategory category = new QuestionCategory();
+            category.setCategoryName(name);
+            category.setCreateTime(LocalDateTime.now());
+            categoryMapper.insert(category);
+            categoryId = category.getId();
+        }
+        resolvedCategories.put(name, categoryId);
+        return categoryId;
     }
 
     @Override
@@ -116,14 +159,30 @@ public class QuestionServiceImpl implements QuestionService {
     }
 
     @Override
-    public Question randomByCategory(Long categoryId, String type) {
-        // categoryId 与 type 任一为 null 都表示不限制该维度
-        // 两个都为 null 时即从全部题目中随机
+    public Question pick(RandomQuestionDTO req) {
+        boolean sequential = "sequential".equals(req.getMode());
+        Question q = selectPick(req, sequential, req.getAfterId());
+        // 顺序模式走到末尾后，从头再找一道（已抽过的会被 excludeIds 过滤掉）
+        if (q == null && sequential && req.getAfterId() != null) {
+            q = selectPick(req, true, null);
+        }
+        return q; // 可能为 null（当前筛选下已没有可抽的题）
+    }
+
+    private Question selectPick(RandomQuestionDTO req, boolean sequential, Long afterId) {
         LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<Question>()
-                .eq(categoryId != null, Question::getCategoryId, categoryId)
-                .eq(StringUtils.hasText(type), Question::getType, type)
-                .last("ORDER BY RAND() LIMIT 1");
-        return questionMapper.selectOne(wrapper); // 可能为 null
+                .eq(req.getCategoryId() != null, Question::getCategoryId, req.getCategoryId())
+                .eq(StringUtils.hasText(req.getType()), Question::getType, req.getType())
+                .notIn(req.getExcludeIds() != null && !req.getExcludeIds().isEmpty(),
+                        Question::getId, req.getExcludeIds());
+        if (sequential) {
+            wrapper.gt(afterId != null, Question::getId, afterId)
+                    .orderByAsc(Question::getId)
+                    .last("LIMIT 1");
+        } else {
+            wrapper.last("ORDER BY RAND() LIMIT 1");
+        }
+        return questionMapper.selectOne(wrapper);
     }
 
     @Override

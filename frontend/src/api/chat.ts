@@ -1,25 +1,60 @@
-// AI 聊天 SSE 封装：基于原生 EventSource（GET 接口）
-// 调用方传入回调，逐字返回 token
+// AI 聊天接口：POST + fetch 读取 SSE，支持携带历史上下文与流式/非流式切换
+
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  message: string
+  history?: ChatHistoryMessage[]
+}
 
 export interface ChatStreamHandlers {
   onMessage: (delta: string) => void
-  onError?: (err: Event) => void
-  onClose?: () => void
 }
 
-export function streamChat(message: string, handlers: ChatStreamHandlers): EventSource {
-  const url = `/api/chat/stream?message=${encodeURIComponent(message)}`
-  const es = new EventSource(url)
-  es.onmessage = (e) => {
-    // Spring SSE 默认每条 message 分隔，e.data 即当前 token
-    handlers.onMessage(e.data)
+/** 流式聊天：逐 token 回调；失败时抛出异常 */
+export async function streamChat(payload: ChatRequest, handlers: ChatStreamHandlers): Promise<void> {
+  const resp = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!resp.ok) throw new Error(`AI 请求失败：HTTP ${resp.status}`)
+  if (!resp.body) throw new Error('当前浏览器不支持流式读取')
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+    let idx = buffer.indexOf('\n\n')
+    while (idx >= 0) {
+      const frame = buffer.slice(0, idx)
+      buffer = buffer.slice(idx + 2)
+      // Spring SSE 每条事件形如 "data:xxx"，一个事件可能由多行 data 组成
+      const data = frame
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).replace(/^ /, ''))
+        .join('\n')
+      if (data) handlers.onMessage(data)
+      idx = buffer.indexOf('\n\n')
+    }
   }
-  es.onerror = (e) => {
-    es.close()
-    handlers.onError?.(e)
-    handlers.onClose?.()
-  }
-  // 当 SpringAI 流结束时，连接会关闭，触发 onerror（EventSource 把连接关闭视为错误）
-  // 我们在 onerror 里统一 close
-  return es
+}
+
+/** 非流式聊天：一次性拿到完整回答 */
+export async function chatOnce(payload: ChatRequest): Promise<string> {
+  const resp = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  const body = await resp.json()
+  if (body.code !== 200) throw new Error(body.msg || 'AI 请求失败')
+  return body.data as string
 }

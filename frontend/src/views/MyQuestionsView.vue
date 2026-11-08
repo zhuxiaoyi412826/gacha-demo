@@ -44,11 +44,18 @@
         </div>
         <div class="sec">
           <div class="sec-label">参考答案</div>
-          <div class="markdown-body" v-html="renderMarkdown(current.answer)"></div>
+          <div v-if="settings.markdownEnabled" class="markdown-body" :style="answerStyle" v-html="renderMarkdown(current.answer)"></div>
+          <div v-else class="markdown-body plain-text" :style="answerStyle">{{ current.answer }}</div>
         </div>
         <div v-if="current.analysis" class="sec">
           <div class="sec-label">解析</div>
-          <div class="markdown-body analysis" v-html="renderMarkdown(current.analysis)"></div>
+          <div
+            v-if="settings.markdownEnabled"
+            class="markdown-body analysis"
+            :style="answerStyle"
+            v-html="renderMarkdown(current.analysis)"
+          ></div>
+          <div v-else class="markdown-body analysis plain-text" :style="answerStyle">{{ current.analysis }}</div>
         </div>
       </div>
       <template #footer>
@@ -71,7 +78,9 @@ import { useRoute } from 'vue-router'
 import { listCategoriesCached } from '@/api/category'
 import { findByIds } from '@/api/question'
 import { useDrawStats } from '@/composables/useDrawStats'
+import { FONT_SIZE_MAP, LINE_HEIGHT_MAP, useSettings } from '@/composables/useSettings'
 import { renderMarkdown } from '@/utils/markdown'
+import { playPage } from '@/utils/sound'
 import type { Category, Question } from '@/types'
 
 type Mode = 'favorites' | 'wrongs' | 'history'
@@ -91,6 +100,12 @@ const emptyText = computed(() =>
 )
 
 const { favorites, wrongs, drawHistory } = useDrawStats()
+const { settings } = useSettings()
+// 答案排版设置：与抽卡页保持一致
+const answerStyle = computed(() => ({
+  fontSize: FONT_SIZE_MAP[settings.answerFontSize],
+  lineHeight: String(LINE_HEIGHT_MAP[settings.answerLineHeight])
+}))
 const categories = ref<Category[]>([])
 const questions = ref<Question[]>([])
 const loading = ref(false)
@@ -122,6 +137,7 @@ const go = (delta: number) => {
   const next = index.value + delta
   if (next < 0 || next >= questions.value.length) return
   index.value = next
+  playPage()
 }
 
 onMounted(async () => {
@@ -232,6 +248,9 @@ onMounted(async () => {
 }
 .analysis {
   color: var(--el-text-color-regular);
-  font-size: 14px;
+}
+.plain-text {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

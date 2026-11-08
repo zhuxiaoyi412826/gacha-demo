@@ -17,15 +17,29 @@ export const updateQuestion = (dto: QuestionDTO): Promise<Question> =>
 export const deleteQuestions = (ids: number[]): Promise<number> =>
   http.delete('/question', { data: ids })
 
-export const randomQuestion = (
-  categoryId?: number | null,
+export type PickMode = 'random' | 'sequential'
+
+export interface PickQuestionParams {
+  /** 分类ID，null/undefined = 全部 */
+  categoryId?: number | null
+  /** 题型，空 = 全部 */
   type?: string | null
-): Promise<Question | null> => {
-  const params: Record<string, unknown> = {}
-  if (categoryId != null) params.categoryId = categoryId
-  if (type) params.type = type
-  return http.get('/question/random', { params })
+  /** 需要排除的题目 ID（不重复抽卡 / 只抽未抽过） */
+  excludeIds?: number[]
+  /** 抽卡模式：随机或按 ID 顺序 */
+  mode?: PickMode
+  /** 顺序模式下从该 ID 之后继续 */
+  afterId?: number | null
 }
+
+export const pickQuestion = (params: PickQuestionParams): Promise<Question | null> =>
+  http.post('/question/random', {
+    categoryId: params.categoryId ?? null,
+    type: params.type || null,
+    excludeIds: params.excludeIds ?? [],
+    mode: params.mode ?? 'random',
+    afterId: params.afterId ?? null
+  })
 
 export const countByCategory = (): Promise<CategoryCount[]> =>
   http.get('/question/count-by-category')

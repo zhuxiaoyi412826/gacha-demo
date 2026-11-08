@@ -5,8 +5,9 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * 全局跨域配置：开发期允许 Vite dev server (http://localhost:5173) 访问后端接口
- * Vite 已配代理，CORS 仅作为双保险
+ * 全局跨域配置：本项目无登录鉴权，允许任意来源访问
+ * 注意：浏览器通过局域网 IP（如 http://192.168.45.171:5173）打开页面时，
+ * POST/PUT/DELETE 会携带该 IP 的 Origin，若只放行 localhost 会返回 403 Invalid CORS request
  */
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
@@ -14,7 +15,7 @@ public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*")
+                .allowedOriginPatterns("*")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true)

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.quizcard.common.ApiResponse;
 import com.example.quizcard.dto.QuestionDTO;
 import com.example.quizcard.dto.QuestionQueryDTO;
+import com.example.quizcard.dto.RandomQuestionDTO;
 import com.example.quizcard.entity.Question;
 import com.example.quizcard.service.QuestionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -56,16 +57,11 @@ public class QuestionController {
         return ApiResponse.ok(questionService.deleteBatch(ids));
     }
 
-    @Operation(summary = "随机取一道题（抽卡核心，categoryId/type 可选）")
-    @GetMapping("/random")
-    public ApiResponse<Question> random(
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) String type) {
-        Question q = questionService.randomByCategory(categoryId, type);
-        if (q == null) {
-            return ApiResponse.ok(null);
-        }
-        return ApiResponse.ok(q);
+    @Operation(summary = "抽一道题（抽卡核心：categoryId/type/excludeIds/mode/afterId 均可选）")
+    @PostMapping("/random")
+    public ApiResponse<Question> random(@RequestBody(required = false) RandomQuestionDTO req) {
+        RandomQuestionDTO dto = req == null ? new RandomQuestionDTO() : req;
+        return ApiResponse.ok(questionService.pick(dto));
     }
 
     @Operation(summary = "各分类题目总数")

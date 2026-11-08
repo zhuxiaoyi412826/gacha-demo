@@ -17,7 +17,14 @@ export default defineConfig({
       // Vite 代理绕过 CORS，前端请求 /api 实际转发到 Spring Boot 8088
       '/api': {
         target: 'http://localhost:8088',
-        changeOrigin: true
+        changeOrigin: true,
+        configure: (proxy) => {
+          // 用局域网 IP 访问时，浏览器会给 POST/PUT/DELETE 带上局域网 Origin，
+          // 经同源代理转发后会被后端 CORS 判定为非法来源，这里直接去掉 Origin
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.removeHeader('origin')
+          })
+        }
       }
     }
   }

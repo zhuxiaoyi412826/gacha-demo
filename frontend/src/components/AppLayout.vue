@@ -16,6 +16,7 @@
         <el-menu-item index="/wrongs">错题</el-menu-item>
         <el-menu-item index="/stats">统计</el-menu-item>
         <el-menu-item index="/chat">AI 聊天</el-menu-item>
+        <el-menu-item index="/settings">设置</el-menu-item>
       </el-menu>
       <el-tooltip :content="isDark ? '切换到浅色模式' : '切换到暗黑模式'" placement="bottom">
         <el-button circle class="theme-btn" @click="toggleDark">

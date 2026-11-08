@@ -8,10 +8,10 @@
             v-model="currentCategoryId"
             placeholder="全部题目"
             clearable
+            :value-on-clear="null"
             style="width: 200px"
             @change="onFilterChange"
           >
-            <el-option label="全部题目" :value="null" />
             <el-option v-for="c in categories" :key="c.id" :label="c.categoryName" :value="c.id" />
           </el-select>
           <span class="label">题型：</span>
@@ -28,6 +28,9 @@
             <el-option label="简答" value="简答" />
           </el-select>
           <el-tag type="info">已抽 {{ drawCount }}</el-tag>
+          <el-tag v-if="settings.noRepeatDraw" type="success" effect="plain">不重复抽卡</el-tag>
+          <el-tag v-if="settings.drawMode === 'sequential'" type="warning" effect="plain">顺序抽卡</el-tag>
+          <el-tag v-else-if="settings.drawMode === 'unseen'" type="info" effect="plain">只抽未抽过</el-tag>
         </div>
         <div>
           <el-button type="primary" :icon="Refresh" @click="drawNext">
@@ -39,7 +42,7 @@
     </el-card>
 
     <div class="card-wrap mt-24">
-      <div class="flip-stage">
+      <div class="flip-stage" :class="{ 'no-anim': !settings.animationsEnabled }">
         <FlipCard
           v-if="currentQuestion"
           :key="currentQuestion.id"
@@ -68,10 +71,14 @@
           <template #back>
             <div class="card-content card-back-content">
               <h3>参考答案<el-button class="copy-ans" link type="primary" size="small" @click.stop="onCopyAnswer">复制答案</el-button></h3>
-              <div class="answer markdown-body" v-html="renderMarkdown(currentQuestion.answer)"></div>
-              <div v-if="currentQuestion.analysis" class="analysis">
+              <div class="answer" :style="answerStyle">
+                <div v-if="settings.markdownEnabled" class="markdown-body" v-html="renderMarkdown(currentQuestion.answer)"></div>
+                <div v-else class="plain-text">{{ currentQuestion.answer }}</div>
+              </div>
+              <div v-if="currentQuestion.analysis" class="analysis" :style="answerStyle">
                 <h4>解析</h4>
-                <div class="markdown-body" v-html="renderMarkdown(currentQuestion.analysis)"></div>
+                <div v-if="settings.markdownEnabled" class="markdown-body" v-html="renderMarkdown(currentQuestion.analysis)"></div>
+                <div v-else class="plain-text">{{ currentQuestion.analysis }}</div>
               </div>
               <div class="hint">点击翻回 ←</div>
             </div>
@@ -121,18 +128,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Refresh, Share } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import html2canvas from 'html2canvas'
 import FlipCard from '@/components/FlipCard.vue'
 import { listCategoriesCached } from '@/api/category'
-import { randomQuestion } from '@/api/question'
-import { load, save, STORAGE_KEYS } from '@/composables/useLocalStorage'
+import { pickQuestion } from '@/api/question'
 import { useDrawStats } from '@/composables/useDrawStats'
+import { FONT_SIZE_MAP, LINE_HEIGHT_MAP, useSettings } from '@/composables/useSettings'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { renderMarkdown } from '@/utils/markdown'
-import { playFlip, playPop } from '@/utils/sound'
+import { playFlip, playPage, playPop } from '@/utils/sound'
 import type { Category, Question, QuestionType } from '@/types'
 
 const { isDark } = useDarkMode()
@@ -141,16 +148,21 @@ const frontStyle = computed(() => ({ background: isDark.value ? '#1d1e1f' : '#ff
 const backStyle = computed(() => ({ background: isDark.value ? '#16232f' : '#f0f9ff' }))
 
 const categories = ref<Category[]>([])
-const currentCategoryId = ref<number | null>(load<number | null>(STORAGE_KEYS.currentCategoryId, null))
-const currentType = ref<QuestionType | ''>(load<QuestionType | ''>(STORAGE_KEYS.currentType, ''))
+const { settings } = useSettings()
+// 新建一轮时套用设置里的默认筛选
+const currentCategoryId = ref<number | null>(settings.defaultCategoryId)
+const currentType = ref<QuestionType | ''>(settings.defaultType)
 const currentQuestion = ref<Question | null>(null)
 const flipped = ref(false)
 const history = ref<Question[]>([])
 const historyIndex = ref(-1)
+/** 顺序抽卡：记录上一题的 ID，用于请求「之后的一题」 */
+const lastDrawnId = ref<number | null>(null)
 
 const {
   drawCount,
   drawnIds,
+  drawHistory,
   isFavorite,
   isWrong,
   toggleFavorite,
@@ -158,6 +170,12 @@ const {
   recordDraw,
   resetDrawnIds
 } = useDrawStats()
+
+/** 答案排版：字号 + 行距（设置页可调） */
+const answerStyle = computed(() => ({
+  fontSize: FONT_SIZE_MAP[settings.answerFontSize],
+  lineHeight: String(LINE_HEIGHT_MAP[settings.answerLineHeight])
+}))
 
 const parsedOptions = computed(() => {
   if (!currentQuestion.value?.options) return []
@@ -204,6 +222,7 @@ const fetchCategories = async () => {
 
 /** 翻卡：切换状态 + 播放 whoosh 音效 */
 const onFlip = () => {
+  clearAutoFlip()
   flipped.value = !flipped.value
   playFlip()
 }
@@ -243,23 +262,62 @@ const onCopyAnswer = () => {
 }
 
 const onFilterChange = () => {
-  save(STORAGE_KEYS.currentCategoryId, currentCategoryId.value)
-  save(STORAGE_KEYS.currentType, currentType.value)
   currentQuestion.value = null
   history.value = []
   historyIndex.value = -1
   flipped.value = false
+  lastDrawnId.value = null
   resetDrawnIds()
 }
 
+/** 需要排除的题目：只抽未抽过 = 历史 + 本轮；不重复抽卡 = 本轮 */
+const buildExcludeIds = (): number[] => {
+  if (settings.drawMode === 'unseen') {
+    return Array.from(new Set([...drawHistory.value, ...drawnIds.value]))
+  }
+  return settings.noRepeatDraw ? [...drawnIds.value] : []
+}
+
+// 自动翻面定时器 / 语音朗读
+let autoFlipTimer: number | undefined
+const clearAutoFlip = () => {
+  if (autoFlipTimer) {
+    clearTimeout(autoFlipTimer)
+    autoFlipTimer = undefined
+  }
+}
+
+/** 抽到后自动朗读题干（浏览器 TTS） */
+const speakQuestion = (text: string) => {
+  if (!('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = 'zh-CN'
+  window.speechSynthesis.speak(u)
+}
+
 const drawNext = async () => {
-  // 不再要求分类必选：分类为 null + 题型为 '' 都表示从全部题目中抽
+  clearAutoFlip()
+  const excludeIds = buildExcludeIds()
   try {
-    const q = await randomQuestion(currentCategoryId.value, currentType.value || undefined)
+    const q = await pickQuestion({
+      categoryId: currentCategoryId.value,
+      type: currentType.value || null,
+      excludeIds,
+      mode: settings.drawMode === 'sequential' ? 'sequential' : 'random',
+      afterId: settings.drawMode === 'sequential' ? lastDrawnId.value : null
+    })
     if (!q) {
-      ElMessage.warning('当前筛选下暂无题目')
+      if (settings.drawMode === 'unseen') {
+        ElMessage.warning(`当前筛选下的题目都已抽过（共 ${excludeIds.length} 道），可在设置里切换抽卡模式`)
+      } else if (settings.noRepeatDraw && drawnIds.value.length > 0) {
+        ElMessage.warning(`本轮题目已抽完（共 ${drawnIds.value.length} 道），点击「重置本轮」后可继续`)
+      } else {
+        ElMessage.warning('当前筛选下暂无题目')
+      }
       return
     }
+    lastDrawnId.value = q.id
     // 截断后续历史
     history.value = history.value.slice(0, historyIndex.value + 1)
     history.value.push(q)
@@ -268,6 +326,17 @@ const drawNext = async () => {
     flipped.value = false
     recordDraw(q.id)
     playPop() // 新题入场音效
+    if (settings.autoSpeak) {
+      speakQuestion(q.title)
+    }
+    if (settings.autoFlip) {
+      autoFlipTimer = window.setTimeout(() => {
+        if (currentQuestion.value?.id === q.id && !flipped.value) {
+          flipped.value = true
+          playFlip()
+        }
+      }, 3000)
+    }
   } catch {
     // axios 拦截器已提示
   }
@@ -278,6 +347,7 @@ const goPrev = () => {
     historyIndex.value -= 1
     currentQuestion.value = history.value[historyIndex.value]
     flipped.value = false
+    playPage()
   }
 }
 // 下一题：历史中还有后续题目则前进浏览；已到最新一条则随机抽一道新题
@@ -286,23 +356,67 @@ const goNext = async () => {
     historyIndex.value += 1
     currentQuestion.value = history.value[historyIndex.value]
     flipped.value = false
+    playPage()
   } else {
     await drawNext()
   }
 }
 
 const resetRound = () => {
+  clearAutoFlip()
   resetDrawnIds()
   history.value = []
   historyIndex.value = -1
   currentQuestion.value = null
   flipped.value = false
+  lastDrawnId.value = null
   ElMessage.success('已重置本轮抽卡历史')
+}
+
+/** 快捷键：空格=抽卡/翻面，←/→=上一题/下一题，1=收藏，2=错题（设置里可关闭） */
+const onKeydown = (e: KeyboardEvent) => {
+  if (!settings.shortcutsEnabled) return
+  const el = e.target as HTMLElement | null
+  if (
+    el &&
+    (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+  ) {
+    return
+  }
+  if (e.code === 'Space') {
+    e.preventDefault()
+    if (!currentQuestion.value) {
+      void drawNext()
+    } else if (!flipped.value) {
+      onFlip()
+    } else {
+      void drawNext()
+    }
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    goPrev()
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    void goNext()
+  } else if (e.key === '1') {
+    if (currentQuestion.value) toggleFavorite(currentQuestion.value.id)
+  } else if (e.key === '2') {
+    if (currentQuestion.value) toggleWrong(currentQuestion.value.id)
+  }
 }
 
 watch(currentQuestion, () => { flipped.value = false })
 
-onMounted(fetchCategories)
+onMounted(() => {
+  fetchCategories()
+  window.addEventListener('keydown', onKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  clearAutoFlip()
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+})
 </script>
 
 <style scoped>
@@ -332,6 +446,18 @@ onMounted(fetchCategories)
 /* 换题重挂载（:key=question.id）时触发入场动画，keyframes 定义在全局 main.css */
 .flip-stage :deep(.flip-card) {
   animation: card-in 0.35s ease;
+}
+/* 设置里关闭动画后：去掉入场动画与翻转过渡 */
+.no-anim :deep(.flip-card) {
+  animation: none;
+}
+.no-anim :deep(.flip-card-inner) {
+  transition: none;
+}
+/* 关闭 Markdown 渲染时的纯文本排版 */
+.plain-text {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .card-content {
   display: flex;

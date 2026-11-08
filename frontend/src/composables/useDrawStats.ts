@@ -21,6 +21,15 @@ function persistDrawHistory() { save(STORAGE_KEYS.drawHistory, drawHistory.value
 /** 趋势图保留最近 20000 次抽卡时间戳，避免 localStorage 无限增长 */
 const DRAW_LOG_LIMIT = 20000
 
+/** 本地用户数据（收藏/错题/历史/抽卡记录），用于设置页导出与导入 */
+export interface LocalUserData {
+  favorites: number[]
+  wrongs: number[]
+  drawHistory: number[]
+  drawCount: number
+  drawLog: number[]
+}
+
 export function useDrawStats() {
   const isFavorite = (id: number) => favorites.value.includes(id)
   const isWrong = (id: number) => wrongs.value.includes(id)
@@ -65,6 +74,58 @@ export function useDrawStats() {
     persistDrawnIds()
   }
 
+  // ============ 设置页数据管理：清空 / 导出 / 导入 ============
+  const clearFavorites = () => {
+    favorites.value = []
+    persistFavorites()
+  }
+  const clearWrongs = () => {
+    wrongs.value = []
+    persistWrongs()
+  }
+  const clearHistory = () => {
+    drawHistory.value = []
+    persistDrawHistory()
+  }
+  const clearDrawStats = () => {
+    drawCount.value = 0
+    drawLog.value = []
+    persistDrawCount()
+    persistDrawLog()
+  }
+
+  const exportLocalData = (): LocalUserData => ({
+    favorites: [...favorites.value],
+    wrongs: [...wrongs.value],
+    drawHistory: [...drawHistory.value],
+    drawCount: drawCount.value,
+    drawLog: [...drawLog.value]
+  })
+
+  /** 导入本地数据：只覆盖传入的字段，未传的保持原样 */
+  const importLocalData = (data: Partial<LocalUserData>) => {
+    if (Array.isArray(data.favorites)) {
+      favorites.value = data.favorites
+      persistFavorites()
+    }
+    if (Array.isArray(data.wrongs)) {
+      wrongs.value = data.wrongs
+      persistWrongs()
+    }
+    if (Array.isArray(data.drawHistory)) {
+      drawHistory.value = data.drawHistory
+      persistDrawHistory()
+    }
+    if (typeof data.drawCount === 'number') {
+      drawCount.value = data.drawCount
+      persistDrawCount()
+    }
+    if (Array.isArray(data.drawLog)) {
+      drawLog.value = data.drawLog
+      persistDrawLog()
+    }
+  }
+
   const favoriteCount = computed(() => favorites.value.length)
   const wrongCount = computed(() => wrongs.value.length)
   const historyCount = computed(() => drawHistory.value.length)
@@ -84,6 +145,12 @@ export function useDrawStats() {
     toggleFavorite,
     toggleWrong,
     recordDraw,
-    resetDrawnIds
+    resetDrawnIds,
+    clearFavorites,
+    clearWrongs,
+    clearHistory,
+    clearDrawStats,
+    exportLocalData,
+    importLocalData
   }
 }

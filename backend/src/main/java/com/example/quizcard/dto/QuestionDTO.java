@@ -12,8 +12,11 @@ public class QuestionDTO {
     /** 编辑时传，新增时不传 */
     private Long id;
 
-    /** 分类ID，可空（未分类题目）；为 null 表示不归类 */
+    /** 分类ID，可空；为 null 时按 categoryName 匹配，否则归到默认分类 */
     private Long categoryId;
+
+    /** 分类名称（批量导入推荐使用）：按名称匹配已有分类，不存在则自动创建 */
+    private String categoryName;
 
     @NotBlank(message = "题干不能为空")
     private String title;

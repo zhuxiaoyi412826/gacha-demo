@@ -3,6 +3,7 @@ package com.example.quizcard.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.quizcard.dto.QuestionDTO;
 import com.example.quizcard.dto.QuestionQueryDTO;
+import com.example.quizcard.dto.RandomQuestionDTO;
 import com.example.quizcard.entity.Question;
 
 import java.util.List;
@@ -28,8 +29,8 @@ public interface QuestionService {
     /** 批量删除题目 */
     int deleteBatch(List<Long> ids);
 
-    /** 按条件随机取一题：categoryId/type 任一可为空（null = 不限制该维度） */
-    Question randomByCategory(Long categoryId, String type);
+    /** 抽一道题：支持分类/题型筛选、排除已抽题目，以及随机或按 ID 顺序两种模式 */
+    Question pick(RandomQuestionDTO req);
 
     /** 各分类题目总数：返回 [{categoryId, count}]，含 categoryId=null 的「未分类」分组 */
     List<Map<String, Object>> countByCategory();

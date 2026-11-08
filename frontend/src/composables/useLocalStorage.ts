@@ -21,13 +21,13 @@ export function remove(key: string): void {
 
 // 业务 keys
 export const STORAGE_KEYS = {
-  currentCategoryId: 'currentCategoryId', // number | null（null = 全部）
-  currentType: 'currentType', // QuestionType | '' （'' = 全部题型）
+  settings: 'settings', // 应用设置对象（见 useSettings）
   favorites: 'favorites', // number[]
   wrongs: 'wrongs', // number[]
   drawnIds: 'drawnIds', // 本轮已抽题目 ID（按分类区分）
   drawCount: 'drawCount', // 总抽卡次数
   drawLog: 'drawLog', // 每次抽卡的时间戳 number[]（趋势图用）
   drawHistory: 'drawHistory', // 累计抽过的题目 ID（去重，跨轮保留）
-  darkMode: 'darkMode' // 暗黑模式开关
+  darkMode: 'darkMode', // 旧版暗黑模式开关（仅用于迁移到 settings.themeMode）
+  noRepeatDraw: 'noRepeatDraw' // 旧版不重复抽卡开关（仅用于迁移到 settings.noRepeatDraw）
 } as const

@@ -53,6 +53,12 @@ const routes: RouteRecordRaw[] = [
         name: 'chat',
         component: () => import('@/views/AiChatView.vue'),
         meta: { title: 'AI 聊天' }
+      },
+      {
+        path: 'settings',
+        name: 'settings',
+        component: () => import('@/views/SettingsView.vue'),
+        meta: { title: '设置' }
       }
     ]
   }

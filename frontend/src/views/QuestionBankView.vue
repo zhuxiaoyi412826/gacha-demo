@@ -117,8 +117,8 @@
 
     <el-dialog v-model="importVisible" title="批量导入题目" width="640px">
       <div class="import-hint">
-        <p>请上传 JSON 数组文件，每项包含：title / type / answer 必填；categoryId / options / analysis 可选。</p>
-        <p class="hint-note">不传 categoryId 时自动归到 id=1 的「默认分类」。</p>
+        <p>请上传 JSON 数组文件，每项包含：title / type / answer 必填；categoryName（推荐）/ categoryId / options / analysis 可选。</p>
+        <p class="hint-note">推荐用 categoryName：按名称匹配已有分类，不存在会自动创建；categoryId 必须是数据库中已存在的分类 ID；都不传则归到「默认分类」。</p>
         <el-button link type="primary" @click="onDownloadTemplate">下载模板</el-button>
       </div>
       <el-upload
@@ -269,11 +269,12 @@ const onBatchDelete = async () => {
 
 // ============ 批量导入 ============
 // 模板示例：
-//   - 前两题显式携带 categoryId，导入后归入指定分类；
-//   - 第三题省略 categoryId 字段，导入后自动归到 id=1 的「默认分类」。
+//   - 前两题分别演示 categoryName（推荐）与 categoryId 两种分类写法；
+//   - 第三题省略分类字段，导入后自动归到 id=1 的「默认分类」。
+// 注意：categoryId 必须真实存在，否则整批导入会报错；categoryName 不存在会自动创建。
 const TEMPLATE_JSON = [
   {
-    categoryId: 1,
+    categoryName: '默认分类',
     title: '示例题目：Java 中哪个关键字用于继承？',
     type: '单选',
     options: '[{"label":"A","text":"extends"},{"label":"B","text":"implements"},{"label":"C","text":"inherit"},{"label":"D","text":"super"}]',
@@ -281,6 +282,7 @@ const TEMPLATE_JSON = [
     analysis: 'extends 用于类继承，implements 用于实现接口。'
   },
   {
+    // categoryId 写法：必须是数据库里已存在的分类 ID
     categoryId: 1,
     title: '示例题目：下列哪些是 Java 基本数据类型？（多选）',
     type: '多选',
@@ -289,7 +291,7 @@ const TEMPLATE_JSON = [
     analysis: 'String 是引用类型，Integer 是包装类。'
   },
   {
-    // 省略 categoryId：导入后自动归到 id=1 的「默认分类」
+    // 省略 categoryName / categoryId：导入后自动归到 id=1 的「默认分类」
     title: '示例题目（不指定分类）：什么是 RESTful API？',
     type: '简答',
     options: '',

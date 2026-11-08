@@ -9,7 +9,8 @@ const http = axios.create({
 
 // 响应拦截器：解包 ApiResponse，业务异常抛出 Error
 http.interceptors.response.use(
-  (resp) => {
+  // 返回解包后的业务数据（而非 AxiosResponse），因此显式标注 any
+  (resp): any => {
     const body = resp.data as ApiResponse
     if (body && typeof body.code === 'number') {
       if (body.code === 200) {
